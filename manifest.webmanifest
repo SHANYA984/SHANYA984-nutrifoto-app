@@ -1,0 +1,11 @@
+{
+  "name": "Nutrifoto",
+  "short_name": "Nutrifoto",
+  "description": "Registro de alimentación y análisis nutricional estimado por fotografía.",
+  "lang": "es-AR",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f7f7f5",
+  "theme_color": "#6d28d9",
+  "icons": []
+}
