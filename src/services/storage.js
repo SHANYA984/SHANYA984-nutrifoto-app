@@ -1,6 +1,7 @@
 const MEALS_KEY = 'nutrifoto:meals:v1';
 const PROFILE_KEY = 'nutrifoto:profile:v1';
 const ACTIVITY_KEY = 'nutrifoto:activity:v1';
+const TRIAL_KEY = 'nutrifoto:trial:v1';
 
 function read(key, fallback) {
   try {
@@ -33,7 +34,13 @@ export const storage = {
     write(ACTIVITY_KEY, activity);
     return entry;
   },
+  getTrial() { return read(TRIAL_KEY, null); },
+  startTrial(data) {
+    const trial = { ...data, startedAt: new Date().toISOString() };
+    write(TRIAL_KEY, trial);
+    return trial;
+  },
   clearAll() {
-    [MEALS_KEY, PROFILE_KEY, ACTIVITY_KEY].forEach((key) => localStorage.removeItem(key));
+    [MEALS_KEY, PROFILE_KEY, ACTIVITY_KEY, TRIAL_KEY].forEach((key) => localStorage.removeItem(key));
   }
 };
