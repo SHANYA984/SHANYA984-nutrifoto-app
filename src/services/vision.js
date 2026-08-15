@@ -1,5 +1,5 @@
-// Contrato del proveedor de visión. El cliente no contiene credenciales.
-// En producción, el adapter debe apuntar a un backend seguro.
+// Cliente de visión. Nunca contiene credenciales del proveedor.
+// En producción, /api/analyze actúa como proxy seguro del proveedor de IA.
 
 export function normalizeVisionResult(result) {
   if (!result) return null;
@@ -25,23 +25,29 @@ export function createVisionProvider(adapter = null) {
   return {
     async analyzeImage(image) {
       if (!image) throw new Error('image_required');
+
       const result = adapter?.analyzeImage
         ? await adapter.analyzeImage(image)
-        : {
-            items: [{
-              name: 'Plato de comida',
-              confidence: null,
-              portionGrams: 350,
-              calories: 520,
-              protein: 24,
-              carbs: 58,
-              fat: 20
-            }],
-            isEstimate: true,
-            provider: 'demo'
-          };
+        : await analyzeThroughBackend(image);
 
       return normalizeVisionResult(result);
     }
   };
+}
+
+async function analyzeThroughBackend(image) {
+  const response = await fetch('/api/analyze', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image })
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const error = new Error(payload.error || 'vision_analysis_failed');
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
 }
