@@ -1,5 +1,5 @@
-// Contrato del proveedor de visión. No contiene credenciales ni llama a un servicio externo.
-// El backend podrá implementar analyzeImage() con el proveedor de IA elegido.
+// Contrato del proveedor de visión. El cliente no contiene credenciales.
+// En producción, el adapter debe apuntar a un backend seguro.
 
 export function createVisionProvider(adapter = null) {
   return {
@@ -9,6 +9,10 @@ export function createVisionProvider(adapter = null) {
       return {
         items: [{ name: 'Plato de comida', confidence: null }],
         portionGrams: 350,
+        calories: 520,
+        protein: 24,
+        carbs: 58,
+        fat: 20,
         isEstimate: true,
         provider: 'demo'
       };
