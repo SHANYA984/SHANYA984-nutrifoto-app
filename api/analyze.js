@@ -11,6 +11,16 @@ export default async function handler(req, res) {
     return res.status(503).json({ error: 'vision_provider_not_configured' });
   }
 
+  const image = req.body?.image;
+  if (typeof image !== 'string' || !image.startsWith('data:image/')) {
+    return res.status(400).json({ error: 'invalid_image_payload' });
+  }
+
+  // Keep the proxy bounded so a browser cannot submit arbitrarily large payloads.
+  if (image.length > 12 * 1024 * 1024) {
+    return res.status(413).json({ error: 'image_payload_too_large' });
+  }
+
   try {
     const response = await fetch(upstream, {
       method: 'POST',
@@ -18,7 +28,7 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`
       },
-      body: JSON.stringify(req.body)
+      body: JSON.stringify({ image })
     });
 
     const text = await response.text();
