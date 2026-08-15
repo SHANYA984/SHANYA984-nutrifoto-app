@@ -27,7 +27,7 @@ function App() {
     e.preventDefault();
     const next = Object.fromEntries(new FormData(e.currentTarget).entries());
     const safety = validateProfile(next);
-    if (!safety.isAdult) return setNotice(safety.warnings[0] || 'Nutrifoto está diseñada para personas adultas.');
+    if (!safety.isAdult) return setNotice(safety.warnings[0] || 'Ingresá una edad válida. Nutrifoto está diseñada para personas adultas.');
     setProfile(next); storage.saveProfile(next); setNotice('Perfil guardado.');
   }
 
@@ -69,6 +69,13 @@ function App() {
     storage.saveActivity(entry); setActivities(storage.getActivity()); e.currentTarget.reset(); setNotice('Actividad registrada.');
   }
 
+  function deleteAllLocalData() {
+    if (!window.confirm('Esto eliminará el perfil, comidas y actividad guardados en este dispositivo. ¿Continuar?')) return;
+    storage.clearAll();
+    setProfile(defaultProfile); setMeals([]); setActivities([]); setAnalysis(null); setPhoto(null); setView('inicio');
+    setNotice('Tus datos locales fueron eliminados.');
+  }
+
   return <div className="app">
     <header className="topbar"><button className="brand" onClick={() => setView('inicio')}><span className="brand-mark">N</span><span>Nutrifoto</span></button><nav>{[['inicio','Inicio'],['foto','Analizar foto'],['registro','Registro'],['perfil','Mi perfil']].map(([id,label]) => <button className={view===id?'active':''} key={id} onClick={() => setView(id)}>{label}</button>)}</nav></header>
     {notice && <div className="notice">{notice}</div>}
@@ -79,7 +86,7 @@ function App() {
 
       {view === 'registro' && <section className="page"><div className="section-head"><div><span className="eyebrow">MI DÍA</span><h2>Registro</h2><p>{meals.length ? `${meals.length} comidas guardadas · ${today.activityMinutes} minutos de actividad` : 'Todavía no tenés comidas registradas.'}</p></div><button className="primary" onClick={() => setView('foto')}>+ Agregar comida</button></div><div className="summary-grid"><div><b>{Math.round(today.calories)}</b><small>kcal estimadas</small></div><div><b>{Math.round(today.protein)} g</b><small>proteína</small></div><div><b>{Math.round(today.carbs)} g</b><small>carbohidratos</small></div><div><b>{Math.round(today.fat)} g</b><small>grasas</small></div></div><div className="log-list">{meals.filter(m=>String(m.date).slice(0,10)===today.date).map(m=><article className="log" key={m.id}><div className="food-icon">◌</div><div><strong>{m.items?.map(i=>i.name).join(', ') || 'Comida'}</strong><small>{new Date(m.date).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}</small></div><b>{Math.round(m.calories)} kcal</b></article>)}{!meals.filter(m=>String(m.date).slice(0,10)===today.date).length && <div className="empty large"><span>○</span><strong>Tu registro empieza acá</strong><p>Analizá tu primera comida para verla en este espacio.</p></div>}</div><div className="activity-card"><div><span className="eyebrow">ACTIVIDAD</span><h3>Registrar movimiento</h3></div><form onSubmit={addActivity}><input name="activity" placeholder="Ej. caminar" required/><input name="minutes" type="number" min="1" placeholder="Minutos" required/><button className="secondary">Guardar</button></form></div></section>}
 
-      {view === 'perfil' && <section className="page narrow"><span className="eyebrow">PERSONALIZACIÓN</span><h2>Mi perfil</h2><p className="lead">Estos datos permiten adaptar la experiencia. Completalos con información propia y actualizada.</p><form className="profile" onSubmit={updateProfile}>{[['name','Nombre','text'],['age','Edad','number'],['weight','Peso (kg)','number'],['height','Altura (cm)','number']].map(([name,label,type])=><label key={name}>{label}<input name={name} type={type} defaultValue={profile[name]} min={type==='number'?0:undefined}/></label>)}<label>Objetivo<select name="goal" defaultValue={profile.goal}><option value="bienestar">Bienestar</option><option value="mantener">Mantener hábitos</option><option value="organizar">Organizar alimentación</option></select></label><label>Actividad<select name="activity" defaultValue={profile.activity}><option>ligera</option><option>moderada</option><option>alta</option></select></label><label className="wide">Condiciones o información relevante<textarea name="conditions" defaultValue={profile.conditions} placeholder="Opcional. No ingreses información que no quieras almacenar."/></label><button className="primary wide">Guardar perfil</button></form><p className="warning">Nutrifoto no diagnostica, no prescribe medicamentos y no reemplaza la evaluación de profesionales de la salud.</p></section>}
+      {view === 'perfil' && <section className="page narrow"><span className="eyebrow">PERSONALIZACIÓN</span><h2>Mi perfil</h2><p className="lead">Estos datos permiten adaptar la experiencia. Completalos con información propia y actualizada.</p><form className="profile" onSubmit={updateProfile}>{[['name','Nombre','text'],['age','Edad','number'],['weight','Peso (kg)','number'],['height','Altura (cm)','number']].map(([name,label,type])=><label key={name}>{label}<input name={name} type={type} defaultValue={profile[name]} min={type==='number'?0:undefined}/></label>)}<label>Objetivo<select name="goal" defaultValue={profile.goal}><option value="bienestar">Bienestar</option><option value="mantener">Mantener hábitos</option><option value="organizar">Organizar alimentación</option></select></label><label>Actividad<select name="activity" defaultValue={profile.activity}><option>ligera</option><option>moderada</option><option>alta</option></select></label><label className="wide">Condiciones o información relevante<textarea name="conditions" defaultValue={profile.conditions} placeholder="Opcional. No ingreses información que no quieras almacenar."/></label><button className="primary wide">Guardar perfil</button></form><button className="danger" onClick={deleteAllLocalData}>Eliminar mis datos de este dispositivo</button><p className="warning">Nutrifoto no diagnostica, no prescribe medicamentos y no reemplaza la evaluación de profesionales de la salud.</p></section>}
     </main><footer>Nutrifoto · MVP · Las estimaciones nutricionales son orientativas.</footer>
   </div>;
 }
