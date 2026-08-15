@@ -1,23 +1,29 @@
 // Cliente de visión. Nunca contiene credenciales del proveedor.
 // En producción, /api/analyze actúa como proxy seguro del proveedor de IA.
 
-export function normalizeVisionResult(result) {
-  if (!result) return null;
+function nonNegativeNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : fallback;
+}
 
-  const items = Array.isArray(result.items) ? result.items.map((item) => ({
-    name: String(item?.name ?? 'Alimento no identificado'),
-    confidence: item?.confidence ?? null,
-    portionGrams: Number(item?.portionGrams ?? 0),
-    calories: Number(item?.calories ?? 0),
-    protein: Number(item?.protein ?? 0),
-    carbs: Number(item?.carbs ?? 0),
-    fat: Number(item?.fat ?? 0)
-  })) : [];
+export function normalizeVisionResult(result) {
+  if (!result || typeof result !== 'object') return null;
+
+  const rawItems = Array.isArray(result.items) ? result.items : [];
+  const items = rawItems.map((item) => ({
+    name: String(item?.name ?? 'Alimento no identificado').trim() || 'Alimento no identificado',
+    confidence: item?.confidence == null ? null : Math.min(1, Math.max(0, nonNegativeNumber(item.confidence))),
+    portionGrams: nonNegativeNumber(item?.portionGrams),
+    calories: nonNegativeNumber(item?.calories),
+    protein: nonNegativeNumber(item?.protein),
+    carbs: nonNegativeNumber(item?.carbs),
+    fat: nonNegativeNumber(item?.fat)
+  }));
 
   return {
     items,
     isEstimate: result.isEstimate !== false,
-    provider: result.provider ?? 'unknown'
+    provider: String(result.provider ?? 'unknown')
   };
 }
 
