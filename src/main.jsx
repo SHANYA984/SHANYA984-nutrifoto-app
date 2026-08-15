@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 import { createVisionProvider } from './services/vision.js';
 import { nutritionService, validateNutrition } from './services/nutrition.js';
-import { safetyService } from './services/safety.js';
+import { validateProfile } from './services/safety.js';
 
 const STORAGE = 'nutrifoto-state-v1';
 const defaultProfile = { name: '', age: '', weight: '', height: '', goal: 'bienestar', activity: 'moderada', conditions: '' };
@@ -32,8 +32,8 @@ function App() {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
     const profile = Object.fromEntries(form.entries());
-    const safety = safetyService.validateProfile(profile);
-    if (!safety.ok) return setNotice(safety.message);
+    const safety = validateProfile(profile);
+    if (!safety.isAdult) return setNotice(safety.warnings[0] || 'Nutrifoto está diseñada para personas adultas.');
     setState(s => ({ ...s, profile }));
     setNotice('Perfil guardado.');
   }
