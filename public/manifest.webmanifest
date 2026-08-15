@@ -1,0 +1,10 @@
+{
+  "name": "Nutrifoto",
+  "short_name": "Nutrifoto",
+  "description": "Guía diaria para organizar tu alimentación, registrar comidas y acompañar tus hábitos.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#6d4aff",
+  "lang": "es-AR"
+}
