@@ -32,5 +32,8 @@ export const storage = {
     const activity = [entry, ...read(ACTIVITY_KEY, [])].slice(0, 500);
     write(ACTIVITY_KEY, activity);
     return entry;
+  },
+  clearAll() {
+    [MEALS_KEY, PROFILE_KEY, ACTIVITY_KEY].forEach((key) => localStorage.removeItem(key));
   }
 };
