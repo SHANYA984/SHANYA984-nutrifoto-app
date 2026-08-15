@@ -1,10 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
+import { createVisionProvider } from './services/vision.js';
+import { nutritionService, validateNutrition } from './services/nutrition.js';
+import { safetyService } from './services/safety.js';
 
 const STORAGE = 'nutrifoto-state-v1';
 const defaultProfile = { name: '', age: '', weight: '', height: '', goal: 'bienestar', activity: 'moderada', conditions: '' };
 const defaultState = { profile: defaultProfile, meals: [], activities: [] };
+const visionProvider = createVisionProvider();
 
 function loadState() {
   try { return JSON.parse(localStorage.getItem(STORAGE)) || defaultState; } catch { return defaultState; }
@@ -16,6 +20,7 @@ function App() {
   const [photo, setPhoto] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => localStorage.setItem(STORAGE, JSON.stringify(state)), [state]);
   useEffect(() => { if (notice) { const t = setTimeout(() => setNotice(''), 3500); return () => clearTimeout(t); } }, [notice]);
@@ -27,6 +32,8 @@ function App() {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
     const profile = Object.fromEntries(form.entries());
+    const safety = safetyService.validateProfile(profile);
+    if (!safety.ok) return setNotice(safety.message);
     setState(s => ({ ...s, profile }));
     setNotice('Perfil guardado.');
   }
@@ -35,23 +42,45 @@ function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) return setNotice('Seleccioná una imagen.');
+    if (file.size > 8 * 1024 * 1024) return setNotice('La imagen debe pesar menos de 8 MB.');
     const reader = new FileReader();
     reader.onload = () => setPhoto(reader.result);
     reader.readAsDataURL(file);
     setAnalysis(null);
   }
 
-  function analyzePhoto() {
+  async function analyzePhoto() {
     if (!photo) return setNotice('Primero cargá una foto.');
-    // Demo local: el proveedor de visión real se conectará detrás de esta misma interfaz.
-    setAnalysis({ food: 'Plato de comida', portion: 350, calories: 520, protein: 24, carbs: 58, fat: 20, confidence: 'estimación inicial' });
+    setBusy(true);
+    try {
+      const result = await visionProvider.analyzeImage(photo);
+      const item = nutritionService.estimateFromVision({
+        food: result.items?.[0]?.name,
+        portion: result.portionGrams,
+        calories: result.calories,
+        protein: result.protein,
+        carbs: result.carbs,
+        fat: result.fat,
+        confidence: result.items?.[0]?.confidence ?? 'estimación'
+      });
+      const validation = validateNutrition(item);
+      if (!validation.ok) throw new Error('No se pudo validar la estimación.');
+      setAnalysis(item);
+    } catch (error) {
+      setNotice(error.message || 'No se pudo analizar la imagen.');
+    } finally { setBusy(false); }
+  }
+
+  function updateAnalysis(field, value) {
+    setAnalysis(a => ({ ...a, [field]: field === 'food' || field === 'confidence' ? value : Number(value) }));
   }
 
   function saveMeal() {
-    if (!analysis) return;
+    const validation = validateNutrition(analysis);
+    if (!validation.ok) return setNotice('Revisá los datos antes de guardar.');
     setState(s => ({ ...s, meals: [{ id: crypto.randomUUID(), date: new Date().toISOString(), name: analysis.food, calories: analysis.calories, protein: analysis.protein, carbs: analysis.carbs, fat: analysis.fat }, ...s.meals] }));
     setNotice('Comida registrada.');
-    setView('registro');
+    setAnalysis(null); setPhoto(null); setView('registro');
   }
 
   function addActivity(e) {
@@ -80,7 +109,7 @@ function App() {
         <section className="features"><article><span>01</span><h3>Fotografía</h3><p>Cargá una imagen de tu comida desde el teléfono o computadora.</p></article><article><span>02</span><h3>Estimación</h3><p>La app prepara una lectura nutricional que podés corregir antes de guardarla.</p></article><article><span>03</span><h3>Evolución</h3><p>Conservá tus registros y observá tus hábitos a lo largo del tiempo.</p></article></section>
       </>}
 
-      {view === 'foto' && <section className="page"><div className="section-head"><div><span className="eyebrow">ANÁLISIS</span><h2>¿Qué comiste?</h2><p>Cargá una fotografía. La identificación nutricional es estimativa.</p></div></div><div className="photo-layout"><label className="dropzone">{photo ? <img src={photo} alt="Comida cargada"/> : <><span className="camera">＋</span><strong>Elegir una foto</strong><small>JPG, PNG o imagen desde cámara</small></>}<input type="file" accept="image/*" capture="environment" onChange={handlePhoto}/></label><div className="analysis-panel">{analysis ? <><span className="eyebrow">RESULTADO</span><h3>{analysis.food}</h3><p className="muted">Porción estimada: {analysis.portion} g · {analysis.confidence}</p><div className="nutri"><div><b>{analysis.calories}</b><span>kcal</span></div><div><b>{analysis.protein}g</b><span>proteína</span></div><div><b>{analysis.carbs}g</b><span>carbohidratos</span></div><div><b>{analysis.fat}g</b><span>grasas</span></div></div><button className="primary full" onClick={saveMeal}>Guardar en mi registro</button><p className="warning">La fotografía no mide nutrientes con exactitud. Revisá y corregí los datos antes de usarlos para decisiones importantes.</p></> : <><div className="empty"><span>✦</span><strong>Listo para analizar</strong><p>Subí una imagen y comenzá el análisis.</p></div><button className="primary full" onClick={analyzePhoto}>Analizar fotografía</button></>}</div></div></section>}
+      {view === 'foto' && <section className="page"><div className="section-head"><div><span className="eyebrow">ANÁLISIS</span><h2>¿Qué comiste?</h2><p>Cargá una fotografía. La identificación nutricional es estimativa.</p></div></div><div className="photo-layout"><label className="dropzone">{photo ? <img src={photo} alt="Comida cargada"/> : <><span className="camera">＋</span><strong>Elegir una foto</strong><small>JPG, PNG o imagen desde cámara</small></>}<input type="file" accept="image/*" capture="environment" onChange={handlePhoto}/></label><div className="analysis-panel">{analysis ? <><span className="eyebrow">RESULTADO EDITABLE</span><label>Alimento<input value={analysis.food} onChange={e => updateAnalysis('food', e.target.value)}/></label><label>Porción estimada (g)<input type="number" min="0" value={analysis.portion} onChange={e => updateAnalysis('portion', e.target.value)}/></label><div className="nutri"><label><b>kcal</b><input type="number" min="0" value={analysis.calories} onChange={e => updateAnalysis('calories', e.target.value)}/></label><label><b>proteína</b><input type="number" min="0" value={analysis.protein} onChange={e => updateAnalysis('protein', e.target.value)}/></label><label><b>carbohidratos</b><input type="number" min="0" value={analysis.carbs} onChange={e => updateAnalysis('carbs', e.target.value)}/></label><label><b>grasas</b><input type="number" min="0" value={analysis.fat} onChange={e => updateAnalysis('fat', e.target.value)}/></label></div><button className="primary full" onClick={saveMeal}>Guardar en mi registro</button><p className="warning">Los valores son estimaciones. Revisalos antes de guardarlos y no los uses como diagnóstico o indicación médica.</p></> : <><div className="empty"><span>✦</span><strong>{busy ? 'Analizando…' : 'Listo para analizar'}</strong><p>{busy ? 'Procesando la imagen.' : 'Subí una imagen y comenzá el análisis.'}</p></div><button className="primary full" disabled={busy} onClick={analyzePhoto}>{busy ? 'Analizando…' : 'Analizar fotografía'}</button></>}</div></div></section>}
 
       {view === 'registro' && <section className="page"><div className="section-head"><div><span className="eyebrow">MI DÍA</span><h2>Registro</h2><p>{state.meals.length ? `${state.meals.length} comidas guardadas · ${activityMinutes} minutos de actividad` : 'Todavía no tenés comidas registradas.'}</p></div><button className="primary" onClick={() => setView('foto')}>+ Agregar comida</button></div><div className="log-list">{state.meals.map(m => <article className="log" key={m.id}><div className="food-icon">◌</div><div><strong>{m.name}</strong><small>{new Date(m.date).toLocaleString('es-AR', {dateStyle:'short', timeStyle:'short'})}</small></div><b>{m.calories} kcal</b></article>)}{!state.meals.length && <div className="empty large"><span>○</span><strong>Tu registro empieza acá</strong><p>Analizá tu primera comida para verla en este espacio.</p></div>}</div><div className="activity-card"><div><span className="eyebrow">ACTIVIDAD</span><h3>Registrar movimiento</h3></div><form onSubmit={addActivity}><input name="activity" placeholder="Ej. caminar" required/><input name="minutes" type="number" min="1" placeholder="Minutos" required/><button className="secondary">Guardar</button></form></div></section>}
 
