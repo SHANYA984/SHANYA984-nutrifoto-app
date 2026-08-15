@@ -8,9 +8,17 @@ import { storage } from './services/storage.js';
 import { summarizeDay } from './services/analytics.js';
 
 const defaultProfile = { name: '', age: '', weight: '', height: '', goal: 'bienestar', activity: 'moderada', conditions: '' };
+const TRIAL_MS = 24 * 60 * 60 * 1000;
 const visionProvider = createVisionProvider();
 
+function trialStatus(trial) {
+  if (!trial?.startedAt) return { active: false, expired: false, remaining: 0 };
+  const remaining = TRIAL_MS - (Date.now() - new Date(trial.startedAt).getTime());
+  return { active: remaining > 0, expired: remaining <= 0, remaining: Math.max(0, remaining) };
+}
+
 function App() {
+  const [trial, setTrial] = useState(() => storage.getTrial());
   const [profile, setProfile] = useState(() => storage.getProfile() || defaultProfile);
   const [meals, setMeals] = useState(() => storage.getMeals());
   const [activities, setActivities] = useState(() => storage.getActivity());
@@ -19,18 +27,38 @@ function App() {
   const [analysis, setAnalysis] = useState(null);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState(Date.now());
 
+  const status = useMemo(() => trialStatus(trial), [trial, now]);
   const today = useMemo(() => summarizeDay(meals, activities), [meals, activities]);
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 60000); return () => clearInterval(timer); }, []);
   useEffect(() => { if (notice) { const t = setTimeout(() => setNotice(''), 3500); return () => clearTimeout(t); } }, [notice]);
 
+  function startTrial(e) {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.currentTarget).entries());
+    const age = Number(data.age);
+    if (!data.name?.trim()) return setNotice('Ingresá tu nombre.');
+    if (!/^\S+@\S+\.\S+$/.test(data.email || '')) return setNotice('Ingresá un email válido.');
+    if (!Number.isFinite(age) || age < 18) return setNotice('La prueba está disponible para personas adultas.');
+    const nextTrial = storage.startTrial({ name: data.name.trim(), email: data.email.trim().toLowerCase(), age });
+    const nextProfile = { ...profile, name: data.name.trim(), age: String(age) };
+    storage.saveProfile(nextProfile); setProfile(nextProfile); setTrial(nextTrial); setView('inicio'); setNotice('Tu prueba gratuita de 1 día comenzó.');
+  }
+
+  function requireActiveTrial(action) {
+    if (!status.active) { setView('final'); return false; }
+    return true;
+  }
   function updateProfile(e) {
     e.preventDefault();
     const next = Object.fromEntries(new FormData(e.currentTarget).entries());
     const safety = validateProfile(next);
-    if (!safety.isAdult) return setNotice(safety.warnings[0] || 'Ingresá una edad válida. Nutrifoto está diseñada para personas adultas.');
+    if (!safety.isAdult) return setNotice(safety.warnings[0] || 'Ingresá una edad válida.');
     setProfile(next); storage.saveProfile(next); setNotice('Perfil guardado.');
   }
   function handlePhoto(e) {
+    if (!requireActiveTrial()) return;
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) return setNotice('Seleccioná una imagen.');
@@ -38,6 +66,7 @@ function App() {
     const reader = new FileReader(); reader.onload = () => setPhoto(reader.result); reader.readAsDataURL(file); setAnalysis(null);
   }
   async function analyzePhoto() {
+    if (!requireActiveTrial()) return;
     if (!photo) return setNotice('Primero cargá una foto.');
     setBusy(true); try { setAnalysis(await visionProvider.analyzeImage(photo)); } catch (error) { setNotice(error.message || 'No se pudo analizar la imagen.'); } finally { setBusy(false); }
   }
@@ -46,30 +75,35 @@ function App() {
     setAnalysis(a => updateMealItem({ ...a, items: a.items }, index, { [field]: numeric ? Number(value) : value }));
   }
   function saveMeal() {
+    if (!requireActiveTrial()) return;
     try { const meal = createMealFromAnalysis(analysis); storage.saveMeal(meal); setMeals(storage.getMeals()); setNotice('Comida registrada.'); setAnalysis(null); setPhoto(null); setView('registro'); } catch { setNotice('Revisá el resultado antes de guardar.'); }
   }
   function addActivity(e) {
-    e.preventDefault(); const form = Object.fromEntries(new FormData(e.currentTarget).entries());
+    e.preventDefault(); if (!requireActiveTrial()) return;
+    const form = Object.fromEntries(new FormData(e.currentTarget).entries());
     storage.saveActivity({ id: crypto.randomUUID(), date: new Date().toISOString(), activity: form.activity, durationMinutes: Number(form.minutes) });
     setActivities(storage.getActivity()); e.currentTarget.reset(); setNotice('Actividad registrada.');
   }
   function deleteAllLocalData() {
-    if (!window.confirm('Esto eliminará el perfil, comidas y actividad guardados en este dispositivo. ¿Continuar?')) return;
-    storage.clearAll(); setProfile(defaultProfile); setMeals([]); setActivities([]); setAnalysis(null); setPhoto(null); setView('inicio'); setNotice('Tus datos locales fueron eliminados.');
+    if (!window.confirm('Esto eliminará el perfil, comidas, actividad y prueba guardados en este dispositivo. ¿Continuar?')) return;
+    storage.clearAll(); setTrial(null); setProfile(defaultProfile); setMeals([]); setActivities([]); setAnalysis(null); setPhoto(null); setView('inicio'); setNotice('Tus datos locales fueron eliminados.');
   }
   const demo = analysis?.isDemo === true;
+  const hoursLeft = Math.ceil(status.remaining / (60 * 60 * 1000));
+
+  if (!trial) return <div className="app"><main><section className="page narrow trial-page"><span className="eyebrow">NUTRIFOTO</span><h1>Probá Nutrifoto<br/><em>gratis durante 1 día.</em></h1><p className="lead">Registrá tus comidas, probá el recorrido de fotografía y conocé tu resumen diario.</p><form className="profile trial-form" onSubmit={startTrial}><label>Nombre<input name="name" autoComplete="name" required placeholder="Tu nombre"/></label><label>Email<input name="email" type="email" autoComplete="email" required placeholder="tu@email.com"/></label><label>Edad<input name="age" type="number" min="18" max="120" required placeholder="18 o más"/></label><button className="primary wide">Empezar mi prueba gratis</button></form><p className="warning">La prueba actual funciona en este dispositivo. Para una cuenta sincronizada entre dispositivos necesitaremos incorporar un servicio de cuentas más adelante.</p></section></main><footer>Nutrifoto · Las estimaciones nutricionales son orientativas.</footer></div>;
+
+  if (status.expired) return <div className="app"><main><section className="page narrow trial-page"><span className="eyebrow">PRUEBA FINALIZADA</span><h1>Tu prueba gratuita<br/><em>terminó.</em></h1><p className="lead">Gracias por probar Nutrifoto, {trial.name}. Esta versión todavía está en etapa de validación.</p><div className="trust"><strong>¿Te gustaría continuar?</strong><span>Próximamente podremos ofrecer una modalidad de uso continuo. Por ahora, estamos reuniendo opiniones de las primeras personas que prueban la app.</span></div><button className="secondary wide" onClick={() => setView('inicio')}>Ver Nutrifoto</button><button className="danger" onClick={deleteAllLocalData}>Eliminar mis datos de este dispositivo</button></section></main><footer>Nutrifoto · Las estimaciones nutricionales son orientativas.</footer></div>;
 
   return <div className="app">
-    <header className="topbar"><button className="brand" onClick={() => setView('inicio')}><span className="brand-mark">N</span><span>Nutrifoto</span></button><nav>{[['inicio','Inicio'],['foto','Analizar foto'],['registro','Registro'],['perfil','Mi perfil']].map(([id,label]) => <button className={view===id?'active':''} key={id} onClick={() => setView(id)}>{label}</button>)}</nav></header>
+    <header className="topbar"><button className="brand" onClick={() => setView('inicio')}><span className="brand-mark">N</span><span>Nutrifoto</span></button><nav>{[['inicio','Inicio'],['foto','Analizar foto'],['registro','Registro'],['perfil','Mi perfil']].map(([id,label]) => <button className={view===id?'active':''} key={id} onClick={() => status.active ? setView(id) : setView('final')}>{label}</button>)}</nav></header>
     {notice && <div className="notice">{notice}</div>}
     <main>
-      {view === 'inicio' && <><section className="hero"><div><span className="eyebrow">NUTRIFOTO</span><h1>Entendé mejor<br/><em>lo que comés.</em></h1><p>Registrá tus comidas con una foto, revisá una estimación nutricional y llevá tu día en un solo lugar.</p><button className="primary" onClick={() => setView('foto')}>Probar Nutrifoto gratis →</button><small className="hero-note">Sin suscripción para probar la versión actual.</small></div><div className="hero-card"><div className="ring">N</div><strong>Tu día, de un vistazo</strong><div className="metric"><span>Calorías registradas</span><b>{Math.round(today.calories)}</b><small>kcal estimadas</small></div><div className="progress"><span style={{width:`${Math.min(today.calories/20,100)}%`}}/></div><div className="mini-grid"><div><b>{today.mealCount}</b><small>comidas</small></div><div><b>{today.activityMinutes}</b><small>min actividad</small></div></div></div></section><section className="features"><article><span>01</span><h3>Fotografiá</h3><p>Elegí una foto de tu comida directamente desde el celular.</p></article><article><span>02</span><h3>Revisá</h3><p>La app muestra una estimación que podés corregir antes de guardarla.</p></article><article><span>03</span><h3>Registrá</h3><p>Guardá tus comidas y consultá tu resumen diario.</p></article></section><section className="trust"><strong>Empezá en menos de un minuto.</strong><span>Nutrifoto es una herramienta de registro y orientación; no reemplaza la evaluación de profesionales de la salud.</span></section></>}
-
+      {view === 'inicio' && <><section className="hero"><div><span className="eyebrow">PRUEBA GRATUITA · {hoursLeft} H {hoursLeft === 1 ? '' : 'RESTANTES'}</span><h1>Entendé mejor<br/><em>lo que comés.</em></h1><p>Registrá tus comidas con una foto, revisá una estimación nutricional y llevá tu día en un solo lugar.</p><button className="primary" onClick={() => setView('foto')}>Analizar una comida →</button></div><div className="hero-card"><div className="ring">N</div><strong>Tu día, de un vistazo</strong><div className="metric"><span>Calorías registradas</span><b>{Math.round(today.calories)}</b><small>kcal estimadas</small></div><div className="progress"><span style={{width:`${Math.min(today.calories/20,100)}%`}}/></div><div className="mini-grid"><div><b>{today.mealCount}</b><small>comidas</small></div><div><b>{today.activityMinutes}</b><small>min actividad</small></div></div></div></section><section className="features"><article><span>01</span><h3>Fotografiá</h3><p>Elegí una foto de tu comida directamente desde el celular.</p></article><article><span>02</span><h3>Revisá</h3><p>La app muestra una estimación que podés corregir antes de guardarla.</p></article><article><span>03</span><h3>Registrá</h3><p>Guardá tus comidas y consultá tu resumen diario.</p></article></section><section className="trust"><strong>Hola, {trial.name}.</strong><span>Tu prueba gratuita está activa. Al finalizar el día podrás decidir si querés continuar cuando exista un plan de uso.</span></section></>}
       {view === 'foto' && <section className="page"><div className="section-head"><div><span className="eyebrow">PASO 1 · FOTO</span><h2>¿Qué comiste?</h2><p>Subí una imagen de tu comida para comenzar.</p></div></div><div className="photo-layout"><label className="dropzone">{photo ? <img src={photo} alt="Comida cargada"/> : <><span className="camera">＋</span><strong>Elegir una foto</strong><small>También podés usar la cámara del celular</small></>}<input type="file" accept="image/*" capture="environment" onChange={handlePhoto}/></label><div className="analysis-panel">{analysis ? <><span className="eyebrow">PASO 2 · REVISÁ</span>{demo && <div className="demo-note" role="status"><strong>Modo demostración</strong><span>Los valores son de ejemplo. Modificalos antes de guardarlos.</span></div>}{analysis.items.map((item,index)=><div className="food-item" key={`${item.name}-${index}`}><label>Alimento<input value={item.name} onChange={e=>editItem(index,'name',e.target.value)}/></label><label>Porción (g)<input type="number" min="0" value={item.portionGrams} onChange={e=>editItem(index,'portionGrams',e.target.value)}/></label><div className="nutri"><label><b>kcal</b><input type="number" min="0" value={item.calories} onChange={e=>editItem(index,'calories',e.target.value)}/></label><label><b>proteína</b><input type="number" min="0" value={item.protein} onChange={e=>editItem(index,'protein',e.target.value)}/></label><label><b>carbohidratos</b><input type="number" min="0" value={item.carbs} onChange={e=>editItem(index,'carbs',e.target.value)}/></label><label><b>grasas</b><input type="number" min="0" value={item.fat} onChange={e=>editItem(index,'fat',e.target.value)}/></label></div></div>)}<button className="primary full" onClick={saveMeal}>Guardar mi comida</button><p className="warning">Las estimaciones son orientativas y no constituyen diagnóstico ni indicación médica.</p></> : <><div className="empty"><span>✦</span><strong>{busy ? 'Procesando…' : 'Tu foto está lista'}</strong><p>{busy ? 'Preparando el resultado.' : 'Subí una imagen y tocá el botón para continuar.'}</p></div><button className="primary full" disabled={busy} onClick={analyzePhoto}>{busy ? 'Procesando…' : 'Continuar con mi foto'}</button></>}</div></div></section>}
-
       {view === 'registro' && <section className="page"><div className="section-head"><div><span className="eyebrow">MI DÍA</span><h2>Registro</h2><p>{meals.length ? `${meals.length} comidas guardadas · ${today.activityMinutes} minutos de actividad` : 'Tu registro todavía está vacío.'}</p></div><button className="primary" onClick={() => setView('foto')}>+ Agregar comida</button></div><div className="summary-grid"><div><b>{Math.round(today.calories)}</b><small>kcal estimadas</small></div><div><b>{Math.round(today.protein)} g</b><small>proteína</small></div><div><b>{Math.round(today.carbs)} g</b><small>carbohidratos</small></div><div><b>{Math.round(today.fat)} g</b><small>grasas</small></div></div><div className="log-list">{meals.filter(m=>String(m.date).slice(0,10)===today.date).map(m=><article className="log" key={m.id}><div className="food-icon">◌</div><div><strong>{m.items?.map(i=>i.name).join(', ') || 'Comida'}</strong><small>{new Date(m.date).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}</small></div><b>{Math.round(m.calories)} kcal</b></article>)}{!meals.filter(m=>String(m.date).slice(0,10)===today.date).length && <div className="empty large"><span>○</span><strong>Tu registro empieza acá</strong><p>Analizá tu primera comida para verla en este espacio.</p></div>}</div><div className="activity-card"><div><span className="eyebrow">ACTIVIDAD</span><h3>Registrar movimiento</h3></div><form onSubmit={addActivity}><input name="activity" placeholder="Ej. caminar" required/><input name="minutes" type="number" min="1" placeholder="Minutos" required/><button className="secondary">Guardar</button></form></div></section>}
-
       {view === 'perfil' && <section className="page narrow"><span className="eyebrow">PERSONALIZACIÓN</span><h2>Mi perfil</h2><p className="lead">Completá tus datos para personalizar la experiencia.</p><form className="profile" onSubmit={updateProfile}>{[['name','Nombre','text'],['age','Edad','number'],['weight','Peso (kg)','number'],['height','Altura (cm)','number']].map(([name,label,type])=><label key={name}>{label}<input name={name} type={type} defaultValue={profile[name]} min={type==='number'?0:undefined}/></label>)}<label>Objetivo<select name="goal" defaultValue={profile.goal}><option value="bienestar">Bienestar</option><option value="mantener">Mantener hábitos</option><option value="organizar">Organizar alimentación</option></select></label><label>Actividad<select name="activity" defaultValue={profile.activity}><option>ligera</option><option>moderada</option><option>alta</option></select></label><label className="wide">Condiciones o información relevante<textarea name="conditions" defaultValue={profile.conditions} placeholder="Opcional. No ingreses información que no quieras almacenar."/></label><button className="primary wide">Guardar perfil</button></form><button className="danger" onClick={deleteAllLocalData}>Eliminar mis datos de este dispositivo</button><p className="warning">Nutrifoto no diagnostica, no prescribe medicamentos y no reemplaza la evaluación de profesionales de la salud.</p></section>}
+      {view === 'final' && <section className="page narrow trial-page"><span className="eyebrow">PRUEBA FINALIZADA</span><h2>Tu prueba terminó</h2><p className="lead">Podemos usar tu opinión para decidir qué funciones incluir en la próxima versión.</p><button className="secondary wide" onClick={() => setView('inicio')}>Volver al inicio</button></section>}
     </main><footer>Nutrifoto · Las estimaciones nutricionales son orientativas.</footer>
   </div>;
 }
