@@ -1,5 +1,7 @@
 // Cliente de visión. Nunca contiene credenciales del proveedor.
 // En producción, /api/analyze actúa como proxy seguro del proveedor de IA.
+// Si todavía no hay proveedor configurado, se usa un resultado de demostración
+// local para poder probar todo el flujo de la app sin generar costos.
 
 function nonNegativeNumber(value, fallback = 0) {
   const number = Number(value);
@@ -23,7 +25,8 @@ export function normalizeVisionResult(result) {
   return {
     items,
     isEstimate: result.isEstimate !== false,
-    provider: String(result.provider ?? 'unknown')
+    provider: String(result.provider ?? 'unknown'),
+    isDemo: result.isDemo === true
   };
 }
 
@@ -32,11 +35,35 @@ export function createVisionProvider(adapter = null) {
     async analyzeImage(image) {
       if (!image) throw new Error('image_required');
 
-      const result = adapter?.analyzeImage
-        ? await adapter.analyzeImage(image)
-        : await analyzeThroughBackend(image);
+      if (adapter?.analyzeImage) {
+        return normalizeVisionResult(await adapter.analyzeImage(image));
+      }
 
-      return normalizeVisionResult(result);
+      try {
+        return normalizeVisionResult(await analyzeThroughBackend(image));
+      } catch (error) {
+        // El modo demo permite probar la app completa sin una API de IA paga.
+        // No pretende identificar la fotografía: entrega datos editables de ejemplo.
+        if (error?.message === 'vision_provider_not_configured' || error?.status === 503) {
+          return normalizeVisionResult({
+            provider: 'demo-local',
+            isEstimate: true,
+            isDemo: true,
+            items: [
+              {
+                name: 'Comida de ejemplo',
+                confidence: null,
+                portionGrams: 300,
+                calories: 450,
+                protein: 20,
+                carbs: 55,
+                fat: 16
+              }
+            ]
+          });
+        }
+        throw error;
+      }
     }
   };
 }
