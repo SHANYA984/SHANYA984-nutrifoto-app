@@ -4,8 +4,16 @@
   "description": "Registro de alimentación y análisis nutricional estimado por fotografía.",
   "lang": "es-AR",
   "start_url": ".",
+  "scope": ".",
   "display": "standalone",
   "background_color": "#f7f7f5",
   "theme_color": "#6d28d9",
-  "icons": []
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }
