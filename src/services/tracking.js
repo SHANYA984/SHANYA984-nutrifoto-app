@@ -8,6 +8,8 @@ const EVENTS = {
   mealRegistered: 'comida_registrada',
   nextDay: 'dia_siguiente',
   trialFinished: 'prueba_finalizada',
+  plusViewed: 'plus_visto',
+  plusInterest: 'interes_plus',
 };
 
 export function trackEvent(name, data = {}) {
