@@ -20,25 +20,23 @@ source = source.replace(
   "const guide=getDailyGuide(currentDay,profile.goal); const energyPlan=useMemo(()=>calculateEnergyPlan(profile),[profile]);"
 );
 
-source = source.replace(
-  "<section className=\"hero\"><div>",
-  "<section className=\"hero\"><div>"
-);
-
 const marker = "<section className=\"day-guide\">";
-const card = `<section className="energy-card"><div><span className="eyebrow">OBJETIVO DEL DÍA</span><h2>{energyPlan.target ? energyPlan.target + ' kcal' : 'Completá tu perfil'}</h2><p>{energyPlan.message}</p></div><div className="energy-stats"><div><b>{Math.round(today.calories)}</b><small>consumidas</small></div><div><b>{energyPlan.target ? Math.max(0,Math.round(energyPlan.target-today.calories)) : '—'}</b><small>restantes</small></div></div>{energyPlan.target&&<div className="energy-progress"><span style={{width:\`${Math.min(100,(today.calories/energyPlan.target)*100)}%\`}}/></div>}<div className="macro-targets"><span>Proteínas {energyPlan.proteinTarget ? energyPlan.proteinTarget+' g' : '—'}</span><span>Carbohidratos {energyPlan.carbTarget ? energyPlan.carbTarget+' g' : '—'}</span><span>Grasas {energyPlan.fatTarget ? energyPlan.fatTarget+' g' : '—'}</span></div></section>`;
+const card = [
+  '<section className="energy-card"><div><span className="eyebrow">OBJETIVO DEL DÍA</span><h2>{energyPlan.target ? energyPlan.target + \' kcal\' : \'Completá tu perfil\'}</h2><p>{energyPlan.message}</p></div>',
+  '<div className="energy-stats"><div><b>{Math.round(today.calories)}</b><small>consumidas</small></div><div><b>{energyPlan.target ? Math.max(0,Math.round(energyPlan.target-today.calories)) : \'—\'}</b><small>restantes</small></div></div>',
+  '<div className="energy-progress"><span style={{width:`${Math.min(100,(today.calories/energyPlan.target)*100)}%`}}/></div>',
+  '<div className="macro-targets"><span>Proteínas {energyPlan.proteinTarget ? energyPlan.proteinTarget+\' g\' : \'—\'}</span><span>Carbohidratos {energyPlan.carbTarget ? energyPlan.carbTarget+\' g\' : \'—\'}</span><span>Grasas {energyPlan.fatTarget ? energyPlan.fatTarget+\' g\' : \'—\'}</span></div></section>'
+].join('');
 if (!source.includes('className="energy-card"')) {
   source = source.replace(marker, card + marker);
 }
 
-source = source.replace(
-  "{[['name','Nombre','text'],['age','Edad','number'],['weight','Peso (kg)','number'],['height','Altura (cm)','number']].map",
-  "{[['name','Nombre','text'],['age','Edad','number'],['weight','Peso (kg)','number'],['height','Altura (cm)','number']].map"
-);
-
-const sexField = `<label>Sexo para estimación energética<select name="sex" defaultValue={profile.sex||''} required><option value="">Seleccionar</option><option value="female">Mujer</option><option value="male">Hombre</option></select></label>`;
+const sexField = '<label>Sexo para estimación energética<select name="sex" defaultValue={profile.sex||\'\'} required><option value="">Seleccionar</option><option value="female">Mujer</option><option value="male">Hombre</option></select></label>';
 if (!source.includes('name="sex"')) {
-  source = source.replace("</label><label>Objetivo<select name=\"goal\"", `</label>${sexField}<label>Objetivo<select name="goal"`);
+  source = source.replace(
+    '</label><label>Objetivo<select name="goal"',
+    '</label>' + sexField + '<label>Objetivo<select name="goal"'
+  );
 }
 
 fs.writeFileSync(path, source);
