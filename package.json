@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node scripts/prepare-build.mjs && vite build",
     "test": "node --test src/services/vision.test.js",
     "preview": "vite preview"
   },
